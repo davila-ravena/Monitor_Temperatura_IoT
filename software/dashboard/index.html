@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Painel de Temperatura</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+<style>
+body { background: #f0f4ff; font-family: Arial; text-align: center; padding: 20px; }
+#valor { font-size: 42px; margin: 20px; font-weight: bold; }
+#valor.alert { color: red; animation: blink 1s infinite; }
+@keyframes blink { 0%,50%,100%{opacity:1;} 25%,75%{opacity:0;} }
+canvas { background: white; padding: 10px; border-radius: 12px; max-width: 600px; margin: auto; box-shadow: 0 0 10px #bbb; }
+#status { margin-top: 10px; font-weight: bold; color: #333; }
+.legend-container { margin-top: 15px; display: flex; justify-content: center; gap: 15px; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-weight: bold; }
+.legend-color { width: 20px; height: 20px; border-radius: 4px; display: inline-block; }
+</style>
+</head>
+<body>
+
+<h1>📟 Monitor IoT – Temperatura Corporal</h1>
+<h3>Ravena & Johnny – MLX90614 + ESP8266</h3>
+
+<div id="valor">Aguardando dados...</div>
+<canvas id="grafico" width="600" height="300"></canvas>
+<div class="legend-container">
+    <div class="legend-item"><div class="legend-color" style="background:red;"></div>Febre &gt; 37.5 °C</div>
+    <div class="legend-item"><div class="legend-color" style="background:green;"></div>Normal 36.5 – 37.5 °C</div>
+    <div class="legend-item"><div class="legend-color" style="background:orange;"></div>Baixa &lt; 36.5 °C</div>
+</div>
+<div id="status">Status: Desconectado</div>
+
+<script>
+// ===== CONFIGURAÇÃO MQTT =====
+const broker = "wss://575a6b7357464859a796ab1c3cab0064.s1.eu.hivemq.cloud:8884/mqtt";
+const username = "ravena";
+const password = "NodeMCU2025#";
+const topic = "ravena/temperatura";
+
+const statusDiv = document.getElementById("status");
+const valorDiv = document.getElementById("valor");
+
+// Conecta MQTT via WebSocket
+const client = mqtt.connect(broker, { username, password });
+
+client.on("connect", () => {
+    console.log("Conectado ao MQTT!");
+    statusDiv.innerHTML = "Status: Conectado";
+    client.subscribe(topic);
+});
+
+client.on("error", (err) => {
+    console.log("Erro MQTT:", err);
+    statusDiv.innerHTML = "Status: Erro na conexão";
+});
+
+client.on("close", () => {
+    console.log("Conexão MQTT fechada");
+    statusDiv.innerHTML = "Status: Desconectado";
+});
+
+client.on("message", (t, message) => {
+    const valor = parseFloat(message.toString());
+    if (isNaN(valor)) return;
+
+    // Atualiza texto
+    valorDiv.innerHTML = valor.toFixed(2) + " °C";
+    if (valor > 37.5) valorDiv.classList.add("alert");
+    else valorDiv.classList.remove("alert");
+
+    // Atualiza gráfico
+    addData(valor);
+});
+
+// ===== GRÁFICO =====
+const ctx = document.getElementById("grafico").getContext("2d");
+const chart = new Chart(ctx, {
+    type: "line",
+    data: {
+        labels: [],
+        datasets: [{
+            label: "Temperatura (°C)",
+            data: [],
+            borderColor: [],
+            borderWidth: 2,
+            tension: 0.3,
+            fill: false,
+            pointRadius: 3,
+            segment: {
+                borderColor: ctx => {
+                    const v = ctx.p0.parsed.y;
+                    if(v > 37.5) return 'red';
+                    else if(v >= 36.5) return 'green';
+                    else return 'orange';
+                }
+            }
+        }]
+    },
+    options: {
+        scales: { y: { beginAtZero:false, suggestedMin:20, suggestedMax:45 } },
+        animation: { duration: 0 }
+    }
+});
+
+function addData(valor){
+    chart.data.labels.push("");
+    chart.data.datasets[0].data.push(valor);
+
+    if(chart.data.labels.length > 40){
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+    }
+
+    chart.update();
+}
+</script>
+
+</body>
+</html>
